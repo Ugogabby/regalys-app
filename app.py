@@ -357,9 +357,27 @@ def main():
         pinecone_filter = {"section": {"$in": section_filter}} if section_filter else None
 
         with st.spinner("Searching 302,377 chunks..."):
-            t0             = time.time()
+            t0 = time.time()
+
+            # ── Query expansion for retrieval ─────────────────────────────
+            # Problem: clinically-phrased queries ("gabapentinoid overdose TTE")
+            # pull clinical papers (Gomes, Evoy) instead of methods papers
+            # (Hernán, Young & Stensrud, Yoshida CCW) because semantic similarity
+            # scores drug/outcome terms higher than methodology terms.
+            #
+            # Fix: prepend a methodology anchor to the retrieval query so
+            # the vector search always finds methods papers first.
+            # The LLM still receives active_query (original, unchanged) —
+            # only the retrieval step uses the expanded version.
+            METHODS_ANCHOR = (
+                "target trial emulation clone-censor-weight CCW sequential trial "
+                "competing events IPCW inverse probability censoring weights "
+                "time-varying confounding pharmacoepidemiology causal inference — "
+            )
+            retrieval_query = METHODS_ANCHOR + active_query
+
             chunks         = retriever.retrieve(
-                query        = active_query,
+                query        = retrieval_query,
                 top_k        = top_k * 3,
                 filters      = pinecone_filter,
                 use_bm25     = use_bm25,
@@ -370,6 +388,8 @@ def main():
         if use_rerank and chunks:
             with st.spinner("Reranking with Cohere..."):
                 t1          = time.time()
+                # Reranker uses active_query (original) so Cohere scores
+                # chunks against what the user actually asked
                 chunks      = reranker.rerank(active_query, chunks, top_n=top_k)
                 rerank_time = time.time() - t1
         else:
