@@ -164,27 +164,37 @@ def generate_hyde_query(user_query: str) -> tuple[str, list[str]]:
     """
     client = anthropic.Anthropic(api_key=cfg.ANTHROPIC_API_KEY)
 
-    prompt = f"""You are an expert pharmacoepidemiology methodologist.
+    prompt = f"""You are an expert pharmacoepidemiology methodologist specializing in:
+- Target trial emulation (TTE) and sequential trial emulation
+- Clone-censor-weight (CCW) methodology
+- Competing events (cause-specific hazards, Fine-Gray, estimands)
+- Inverse probability of censoring weighting (IPCW)
+- Time-varying confounding in administrative claims data
 
 A researcher asked: "{user_query}"
 
 Complete TWO tasks. Respond ONLY with valid JSON, no other text.
 
 TASK 1 — HyDE excerpt:
-Write a 150-word excerpt from a pharmacoepidemiology methods paper that would
-perfectly answer this question. Write it as if it IS the methods section of
-a real paper — use technical terminology, cite concepts (not real papers),
-describe procedures concretely. This excerpt will be used to search a
-database of 3,894 papers.
+Write a 200-word excerpt from the METHODS section of a pharmacoepidemiology
+paper that directly addresses the METHODOLOGICAL approach in the question.
 
-TASK 2 — Sub-queries:
-Write 3 specific search queries that together cover all facets of the
-researcher's question. Each query should target a different aspect:
-  - Sub-query 1: the core statistical/causal method
-  - Sub-query 2: the clinical/epidemiologic context
-  - Sub-query 3: implementation in administrative claims data
+CRITICAL RULES for the excerpt:
+- Focus on the CAUSAL INFERENCE METHOD (CCW, TTE, IPCW, competing events
+  estimands, sequential trial emulation) — not the clinical findings
+- Use precise technical vocabulary: "clone-censor-weight", "artificial censoring",
+  "grace period", "IPCW", "cause-specific hazard", "subdistribution hazard",
+  "time-varying confounding", "per-protocol estimand", "sequential trials"
+- Describe the PROCEDURE step by step as a methods section would
+- Do NOT write about drug effects, clinical outcomes, or epidemiologic findings
+- This excerpt will search a database — it must match methods paper vocabulary
 
-Return ONLY this JSON structure:
+TASK 2 — Sub-queries (3 queries targeting different retrieval facets):
+  - Sub-query 1: the core causal inference method (CCW, IPCW, TTE steps)
+  - Sub-query 2: the competing events methodology (estimand choice, weight construction)
+  - Sub-query 3: implementation in administrative claims data (Medicaid, T-MSIS)
+
+Return ONLY this JSON:
 {{
   "hyde_excerpt": "...",
   "sub_queries": ["...", "...", "..."]
