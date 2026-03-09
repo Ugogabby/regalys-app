@@ -169,7 +169,7 @@ class HybridRetriever:
         # input_type="query" optimised for search (vs "document" for storage)
         result    = self.voyage.embed(
             [query],
-            model      = cfg.EMBED_MODEL,
+            model      = "voyage-3",
             input_type = "query",
         )
         query_vec = result.embeddings[0]
