@@ -388,9 +388,10 @@ def main():
         if use_rerank and chunks:
             with st.spinner("Reranking with Cohere..."):
                 t1          = time.time()
-                # Reranker uses active_query (original) so Cohere scores
-                # chunks against what the user actually asked
-                chunks      = reranker.rerank(active_query, chunks, top_n=top_k)
+                # Reranker also uses retrieval_query (expanded) so Cohere
+                # scores chunks against methodology terms, not just clinical
+                # context — prevents Gomes/Evoy from displacing methods papers
+                chunks      = reranker.rerank(retrieval_query, chunks, top_n=top_k)
                 rerank_time = time.time() - t1
         else:
             chunks, rerank_time = chunks[:top_k], 0
