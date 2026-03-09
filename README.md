@@ -14,3 +14,7 @@ Live app: https://regalys.streamlit.app
 
 Built by Ugochukwu Ezigbo — PhD Student, University of Pittsburgh
 
+
+## License
+MIT License. Copyright (c) 2025 Ugochukwu Ezigbo. See LICENSE for details.
+
