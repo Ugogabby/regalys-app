@@ -12,5 +12,5 @@ Live app: https://regalys.streamlit.app
 
 
 
-Built by Ugochukwu Ezigbo — PhD Candidate, University of Pittsburgh
+Built by Ugochukwu Ezigbo — PhD Student, University of Pittsburgh
 
