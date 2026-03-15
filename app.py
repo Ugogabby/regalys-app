@@ -68,6 +68,15 @@ st.markdown("""
     .live-badge    { background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; margin-left: 4px; }
     .stButton > button { background-color: #1f4e79; color: white; border-radius: 6px; padding: 0.5rem 2rem; font-weight: 600; }
     .timing-bar { font-size: 0.75rem; color: #888; margin-top: 0.5rem; }
+    /* ── ARIA personal knowledge badge styles (added 2026-03-15) ─────────────
+       Green palette to contrast with score-badge (blue) and section-badge (yellow).
+       .aria-badge      — "👤 Personal" pill label
+       .aria-file-badge — source filename pill (e.g. ltcdc_sas_extraction.sas)
+       .aria-score-badge — retrieval score, replaces blue .score-badge for ARIA chunks
+    ── */
+    .aria-badge      { background: #d4edda; color: #155724; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 700; margin-left: 4px; border: 1px solid #c3e6cb; }
+    .aria-file-badge { background: #e8f5e9; color: #2e7d32; padding: 2px 8px; border-radius: 12px; font-size: 0.68rem; font-weight: 600; margin-left: 4px; }
+    .aria-score-badge{ background: #c8e6c9; color: #1b5e20; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; font-weight: 600; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -266,12 +275,12 @@ def build_synthesis_prompt(query: str, chunks: list[dict]) -> str:
 
 A researcher has asked the following question:
 
-{query}
+{{query}}
 
-You have been provided with {len(chunks)} highly relevant passages retrieved from a curated pharmacoepidemiology literature database of 3,894 peer-reviewed papers. Each passage is from a DISTINCT article — one chunk per paper. Chunks marked [LIVE] are from recent papers retrieved in real time. These are your ONLY permitted sources of factual claims. Every assertion must be supported by at least one citation. If passages do not contain sufficient evidence, explicitly state: "The retrieved literature does not provide direct evidence on [specific aspect]" — do NOT speculate.
+You have been provided with {{len(chunks)}} highly relevant passages retrieved from a curated pharmacoepidemiology literature database of 3,894 peer-reviewed papers. Each passage is from a DISTINCT article — one chunk per paper. Chunks marked [LIVE] are from recent papers retrieved in real time. These are your ONLY permitted sources of factual claims. Every assertion must be supported by at least one citation. If passages do not contain sufficient evidence, explicitly state: "The retrieved literature does not provide direct evidence on [specific aspect]" — do NOT speculate.
 
 RETRIEVED LITERATURE:
-{context}
+{{context}}
 
 Structure your response as follows:
 
@@ -314,14 +323,38 @@ def synthesize_answer(query: str, chunks: list[dict]) -> str:
 # ─────────────────────────────────────────────────────────────────────────────
 # Chunk card
 # ─────────────────────────────────────────────────────────────────────────────
+# ARIA integration: _is_aria_chunk() detects personal knowledge chunks (2026-03-15).
+# aria/embedder.py sets source_type="personal" and IDs as "aria-{hash}-{pos}".
+# Published REgalys literature never carries these markers.
+def _is_aria_chunk(chunk: dict) -> bool:
+    """
+    Returns True if this chunk came from ARIA personal knowledge ingestion.
+
+    Three independent detection signals (any one is sufficient):
+      1. source_type == "personal"        — set by aria/embedder.py on every upsert
+      2. pmid starts with "aria-"         — ARIA chunk IDs: aria-{md5hash}-{position}
+      3. journal contains "ARIA Personal" — set in aria/extractors/_base.py build_chunk()
+
+    Three signals for robustness: in cloud mode (no local all_chunks.json),
+    Pinecone metadata may be partially truncated — at least one signal survives.
+    """
+    return (
+        chunk.get("source_type") == "personal"
+        or str(chunk.get("pmid", "")).startswith("aria-")
+        or "ARIA Personal Knowledge" in chunk.get("journal", "")
+    )
+
+
 def render_chunk_card(chunk: dict, index: int):
     authors  = chunk.get("authors",  "Unknown")[:50]
     year     = chunk.get("year",     "????")
     journal  = chunk.get("journal",  "Unknown")[:40]
     section  = chunk.get("section",  "")
     pmid     = chunk.get("pmid",     "")
+    filename = chunk.get("filename", "")   # ARIA: source filename e.g. ltcdc_sas_extraction.sas
     text     = chunk.get("text_original", chunk.get("text", ""))
     is_live  = chunk.get("is_live_result", False)
+    is_aria  = _is_aria_chunk(chunk)      # ARIA: True if personal knowledge chunk
 
     rerank_score    = chunk.get("rerank_score",    None)
     retrieval_score = chunk.get("retrieval_score", None)
@@ -329,17 +362,44 @@ def render_chunk_card(chunk: dict, index: int):
     if rerank_score    is not None: score_str += f"rerank: {rerank_score:.3f}"
     if retrieval_score is not None: score_str += f"  rrf: {retrieval_score:.4f}"
 
-    label = f"[{'LIVE ' if is_live else ''}{index}] {authors} ({year})"
+    # ARIA: personal chunks get 👤 prefix; live chunks keep LIVE prefix; published unchanged
+    if is_aria:
+        label = f"[{index}] 👤 {authors} ({year})"
+    else:
+        label = f"[{'LIVE ' if is_live else ''}{index}] {authors} ({year})"
+
     with st.expander(label, expanded=False):
-        live_badge = '<span class="live-badge">🌐 Live</span>' if is_live else ""
-        st.markdown(
-            f'<span class="chunk-meta">{journal}</span>'
-            f'<span class="section-badge">{section}</span>'
-            f'{live_badge}<br><span class="score-badge">{score_str}</span>',
-            unsafe_allow_html=True,
-        )
-        if pmid and not str(pmid).startswith("BOOK_"):
-            st.markdown(f'[PubMed {pmid}](https://pubmed.ncbi.nlm.nih.gov/{pmid}/)')
+        if is_aria:
+            # ── ARIA personal knowledge — green badge treatment ────────────
+            # .aria-badge: "👤 Personal" pill | .aria-file-badge: filename pill
+            # .aria-score-badge: green score (replaces blue .score-badge)
+            meta_html = (
+                f'<span class="chunk-meta">{journal}</span>'
+                f'<span class="aria-badge">👤 Personal</span>'
+            )
+            if filename:
+                # Show source filename so you know which file this chunk came from
+                meta_html += f'<span class="aria-file-badge">📄 {filename}</span>'
+            meta_html += f'<br><span class="aria-score-badge">{score_str}</span>'
+            st.markdown(meta_html, unsafe_allow_html=True)
+            # Show ARIA file category (sas_code, pdf_document, etc.)
+            # Personal files have no PubMed ID — no link shown
+            file_type = chunk.get("file_type", section)
+            if file_type:
+                st.caption(f"Source type: {file_type}")
+        else:
+            # ── Published literature — original REgalys design, unchanged ─
+            live_badge = '<span class="live-badge">🌐 Live</span>' if is_live else ""
+            st.markdown(
+                f'<span class="chunk-meta">{journal}</span>'
+                f'<span class="section-badge">{section}</span>'
+                f'{live_badge}<br><span class="score-badge">{score_str}</span>',
+                unsafe_allow_html=True,
+            )
+            # Exclude textbooks (BOOK_) and ARIA chunks (aria-) from PubMed link
+            if pmid and not str(pmid).startswith("BOOK_") and not str(pmid).startswith("aria-"):
+                st.markdown(f'[PubMed {pmid}](https://pubmed.ncbi.nlm.nih.gov/{pmid}/)')
+
         st.markdown("---")
         preview = text[:400] + "..." if len(text) > 400 else text
         st.write(preview)
@@ -382,7 +442,8 @@ def render_evidence_table(evidence_table: list[dict]):
 def render_sidebar(chunks=None, hyde_excerpt=None, sub_queries=None, quality_summary=None):
     with st.sidebar:
         st.markdown("### 🔬 Knowledge Base")
-        st.markdown("**Papers:** 3,894 | **Chunks:** 302,377")
+        st.markdown("**Papers:** 3,894 | **Chunks:** 302,377+")
+        st.markdown("**👤 Personal files:** ARIA enabled")  # ARIA: personal KB active
         st.markdown("**Embeddings:** Voyage AI voyage-3")
         st.markdown("**Reranker:** Cohere Rerank 3")
         st.markdown("**Retrieval:** HyDE + Multi-query RRF")
@@ -453,7 +514,13 @@ def render_sidebar(chunks=None, hyde_excerpt=None, sub_queries=None, quality_sum
             st.markdown("---")
 
         if chunks:
+            # ARIA: count personal vs literature chunks and show split when personal present
+            personal_count   = sum(1 for c in chunks if _is_aria_chunk(c))
+            literature_count = len(chunks) - personal_count
             st.markdown(f"### 📄 Retrieved Chunks ({len(chunks)})")
+            if personal_count > 0:
+                # Show breakdown only when ARIA personal chunks are retrieved
+                st.caption(f"📚 Literature: {literature_count} · 👤 Personal: {personal_count}")
             for i, chunk in enumerate(chunks, start=1):
                 render_chunk_card(chunk, i)
 
@@ -730,6 +797,7 @@ def main():
         "REgalys · Real-world Evidence Generation and Analysis Insights · "
         "Built by Ugochukwu Ezigbo BPharm, MHA · "
         "PhD Candidate, University of Pittsburgh · Pharmaceutical Outcomes & Policy · "
+        "👤 ARIA personal knowledge enabled · "   # ARIA: footer indicator
         "[GitHub](https://github.com/Ugogabby/regalys)"
     )
 
