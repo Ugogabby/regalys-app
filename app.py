@@ -275,12 +275,12 @@ def build_synthesis_prompt(query: str, chunks: list[dict]) -> str:
 
 A researcher has asked the following question:
 
-{{query}}
+{query}
 
-You have been provided with {{len(chunks)}} highly relevant passages retrieved from a curated pharmacoepidemiology literature database of 3,894 peer-reviewed papers. Each passage is from a DISTINCT article — one chunk per paper. Chunks marked [LIVE] are from recent papers retrieved in real time. These are your ONLY permitted sources of factual claims. Every assertion must be supported by at least one citation. If passages do not contain sufficient evidence, explicitly state: "The retrieved literature does not provide direct evidence on [specific aspect]" — do NOT speculate.
+You have been provided with {len(chunks)} highly relevant passages retrieved from a curated pharmacoepidemiology literature database of 3,894 peer-reviewed papers. Each passage is from a DISTINCT article — one chunk per paper. Chunks marked [LIVE] are from recent papers retrieved in real time. These are your ONLY permitted sources of factual claims. Every assertion must be supported by at least one citation. If passages do not contain sufficient evidence, explicitly state: "The retrieved literature does not provide direct evidence on [specific aspect]" — do NOT speculate.
 
 RETRIEVED LITERATURE:
-{{context}}
+{context}
 
 Structure your response as follows:
 
@@ -457,6 +457,13 @@ def render_sidebar(chunks=None, hyde_excerpt=None, sub_queries=None, quality_sum
             "HyDE retrieval ✨", value=True, key="cb_hyde",
             help="Hypothetical Document Embedding — generates an ideal methods excerpt to guide retrieval. Adds ~2s, costs ~$0.001.",
         )
+        # ARIA toggle: when OFF, personal knowledge chunks are excluded from
+        # retrieval by filtering Pinecone to source_type != "personal".
+        # When ON, personal files are retrieved alongside published literature.
+        use_aria     = st.checkbox(
+            "👤 Include personal knowledge (ARIA)", value=True, key="cb_aria",
+            help="Include your personal files (SAS scripts, notes, documents) ingested via ARIA alongside published literature.",
+        )
         top_k = st.slider("Chunks to retrieve", 4, 16, 16, key="slider_topk")
         section_filter = st.multiselect(
             "Filter by section",
@@ -524,7 +531,7 @@ def render_sidebar(chunks=None, hyde_excerpt=None, sub_queries=None, quality_sum
             for i, chunk in enumerate(chunks, start=1):
                 render_chunk_card(chunk, i)
 
-    return use_bm25, use_semantic, use_rerank, use_hyde, top_k, section_filter, use_live, live_year, live_n, run_pico
+    return use_bm25, use_semantic, use_rerank, use_hyde, use_aria, top_k, section_filter, use_live, live_year, live_n, run_pico
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -559,7 +566,7 @@ def main():
     enricher       = load_enricher()
     live_augmenter = load_live_augmenter()
 
-    (use_bm25, use_semantic, use_rerank, use_hyde,
+    (use_bm25, use_semantic, use_rerank, use_hyde, use_aria,
      top_k, section_filter,
      use_live, live_year, live_n,
      run_pico) = render_sidebar(
@@ -630,12 +637,22 @@ def main():
         st.session_state.sub_queries  = sub_queries
 
         # Stage 2: Multi-query retrieval with RRF fusion + per-article deduplication
+        # ARIA filter: when use_aria is OFF, restrict Pinecone to source_type != "personal"
+        # so personal knowledge chunks are completely excluded from this query.
+        # When ON (default), published literature and personal files are retrieved together.
+        aria_filter = pinecone_filter.copy() if pinecone_filter else {}
+        if not use_aria:
+            # Exclude personal chunks by requiring source_type to not be "personal"
+            # Pinecone filter syntax: $ne = not equal
+            aria_filter["source_type"] = {"$ne": "personal"}
+        effective_filter = aria_filter if aria_filter else None
+
         with st.spinner("Searching 302,377 chunks across multiple query facets..."):
             t0     = time.time()
             chunks = multi_query_retrieve(
                 retriever=retriever, hyde_excerpt=hyde_excerpt,
                 sub_queries=sub_queries, user_query=active_query,
-                candidate_k=candidate_k, pinecone_filter=pinecone_filter,
+                candidate_k=candidate_k, pinecone_filter=effective_filter,
                 use_bm25=use_bm25, use_semantic=use_semantic,
             )
             retrieval_time = time.time() - t0
