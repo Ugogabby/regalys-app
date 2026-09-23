@@ -12,7 +12,7 @@ Live app: https://regalys.streamlit.app
 
 
 
-Built by Ugochukwu Ezigbo — PhD Student, University of Pittsburgh
+Built by Ugochukwu Ezigbo, BPharm, MHA, PhD Candidate in Pharmaceutical Outcomes and Policy Research at the University of Pittsburgh School of Pharmacy.
 
 
 ## License
